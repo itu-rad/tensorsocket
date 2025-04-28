@@ -1,0 +1,20 @@
+[build-system]
+requires = ["flit_core >=3.2,<4"]
+build-backend = "flit_core.buildapi"
+
+[project]
+name = "tensorsocket"
+authors = [{name = "Neil Kim Nielsen", email = "neilkimn@protonmail.com"}]
+readme = "README.md"
+license = {file = "LICENSE"}
+classifiers = ["License :: OSI Approved :: MIT License"]
+dynamic = ["version", "description"]
+requires-python = ">=3.10.0"
+dependencies = [
+    "pyzmq >= 25.0.0",
+    "tornado >= 6.0.0",
+    "torch >= 2.0.0",
+]
+
+[project.urls]
+Home = "https://github.com/Resource-Aware-Data-systems-RAD/tensorsocket"

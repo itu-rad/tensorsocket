@@ -14,7 +14,7 @@ from .heartbeat import HeartBeater
 from .payload import TensorPayload
 
 logger = logging.getLogger("tensorsocket")
-logger.setLevel(logging.WARNING)
+# logger.setLevel(logging.WARNING)
 LOCALHOST = "tcp://*"
 
 
@@ -107,13 +107,18 @@ def process_tensor(tensor: Any) -> TensorPayload:
     return tensor
 
 
-def data_to_cuda(data: tuple) -> tuple:
+def data_to_cuda(data: tuple) -> tuple:  # TODO: also dict
+    if isinstance(data, dict):
+        return {
+            k: (v.to(device="cuda") if isinstance(v, Tensor) else v)
+            for k, v in data.items()
+        }
     return tuple(
         (element.to(device="cuda") for element in data if isinstance(element, Tensor))
     )
 
 
-def pack(data: tuple) -> tuple:
+def pack(data) -> tuple:  # TODO: also dict
     """Pack multiple tensors for transmission.
 
     Args:
@@ -122,18 +127,35 @@ def pack(data: tuple) -> tuple:
     Returns:
         Tuple of processed tensors
     """
+    if isinstance(data, dict):
+        return {k: process_tensor(v) for k, v in data.items()}
     return tuple((process_tensor(t) for t in data))
 
 
-def slice(data: tuple, a: int, b: int) -> tuple:
+def slice(data, a: int, b: int) -> tuple:  # TODO: also dict
     """Slice multiple tensors"""
-
+    if isinstance(data, dict):
+        new_data = {}
+        for key in data.keys():
+            new_data[key] = data[key][a:b]
+        return new_data
     return tuple((element[a:b] for element in data))
 
 
-def collate(batches: list) -> tuple:
+def collate(batches: list) -> tuple:  # TODO: also dict
     """Collate multiple tensors"""
-
+    if isinstance(batches[0], dict):
+        new_batch = {}
+        for key in batches[0].keys():
+            # for b in batches:
+            #     print(b[key].shape)
+            # print(key, "done\n\n\n")
+            # new_batch[key] = cat([batch[key][0] for batch in batches])
+            # new_batch[key] = cat([batch[key] for batch in batches])
+            new_batch[key] = cat(
+                [batches[0][key] for batch in batches]
+            )  # TODO: replace, this is to temp check with padded length
+        return new_batch
     return tuple((cat([batch[i] for batch in batches]) for i in range(len(batches[0]))))
 
 
@@ -159,6 +181,8 @@ class TensorPool:
         Returns:
             tuple: The destination tuple with updated tensor values
         """
+        destination = source  # TODO: fix
+        return destination
 
         for dest, src in zip(destination, source):
             if isinstance(src, Tensor):
@@ -424,11 +448,13 @@ class TensorProducer:
 
             if batch_length < self.producer_batch_size:
                 # add CPU tensors to rubberband buffer
-                self.rb_buffer.append((self.index, next(self.data_loader_iter)))
+                self.rb_buffer.append((self.index, n := next(self.data_loader_iter)))
+                # print("\n\n\nNEXT!!!", n["tokens"].shape, n["labels"].shape)
 
                 # if loader batch size not yet determined, set it
                 if self.loader_batch_size == 0:
-                    self.loader_batch_size = len(self.rb_buffer[-1][1][0])
+                    # self.loader_batch_size = len(self.rb_buffer[-1][1][0])
+                    self.loader_batch_size = 4  # TODO: fix lol
                     for consumer in self.consumers:
                         self.consumers[consumer].loader_batch_size = (
                             self.loader_batch_size
@@ -495,24 +521,37 @@ class TensorProducer:
                 continue
 
             messages = []
+            try:
+                lens = len(data["labels"])  # TODO: fix
+            except TypeError as e:
+                lens = 0
 
             for i, offset in enumerate(
                 range(
                     (bmax - current_batch_index) * self.loader_batch_size,
-                    len(data[0]),
+                    lens,  # TODO: fix
                     bs,
                 )
             ):
-                if offset + bs > len(data[0]):
+                if offset + bs > lens:  # TODO: fix
                     break
 
                 messages.append(
                     dict(
-                        data=self.pack_fn(slice(data, offset, offset + bs)),
+                        data=(n := self.pack_fn(slice(data, offset, offset + bs))),
                         current_epoch=current_epoch,
                         current_batch_index=bmax * self.loader_batch_size // bs + i,
                     )
                 )
+                # print(
+                #     "\n\n\nNEXT MESSAGE SENT!!!",
+                #     data["tokens"].shape,
+                #     data["labels"].shape,
+                #     slice(data, offset, offset + bs)["tokens"].shape,
+                #     slice(data, offset, offset + bs)["labels"].shape,
+                #     n["tokens"]._tensor.shape,
+                #     n["labels"]._tensor.shape,
+                # )
 
             payload[consumer[2:-1]] = messages
 
@@ -522,6 +561,7 @@ class TensorProducer:
                 f"buffer size: {len(self.rb_buffer)}"
             )
 
+        # print("SENDING!!!!!\n\n\n", payload)
         self.socket.send_pyobj(payload)
         return payload
 

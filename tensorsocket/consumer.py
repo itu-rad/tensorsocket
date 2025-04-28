@@ -12,12 +12,12 @@ from .heartbeat import Heart
 
 logging.basicConfig(
     format="%(asctime)s %(levelname)s %(message)s",
-    level=logging.DEBUG,
+    # level=logging.DEBUG,
     stream=sys.stdout,
 )
 
 logger = logging.getLogger("tensorsocket")
-logger.setLevel(logging.WARNING)
+# logger.setLevel(logging.WARNING)
 LOCALHOST = "tcp://localhost"
 
 
@@ -30,6 +30,10 @@ def unpack(data: tuple) -> tuple:
     Returns:
         Tuple with reconstructed tensors
     """
+    if isinstance(data, dict):
+        return {
+            k: v.tensor if isinstance(v, TensorPayload) else v for k, v in data.items()
+        }
     return tuple((t.tensor if isinstance(t, TensorPayload) else t for t in data))
 
 
@@ -135,7 +139,9 @@ class TensorConsumer:
 
             received_new = False
 
+            # print(messages)
             for message in messages:
+                # print("MESSAGE", message.keys())
                 if message["current_batch_index"] == self.batch_max + 1:
                     self.buffer.put(message)
                     self.batch_max = message["current_batch_index"]
@@ -193,6 +199,8 @@ class TensorConsumer:
 
             batch = self.unpack_fn(payload["data"])
 
+            # print("\n\n\n\n\n\n\n\nBATCH consumer!!!!!!!!!", batch_idx, batch)
+            # exit()
             if batch_idx == self.batch_count:
                 logger.info(
                     f"Epoch: {self.epoch}, batch_idx: {batch_idx}, batch count: {self.batch_count}"

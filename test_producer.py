@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-""" ImageNet Training Script
+"""ImageNet Training Script
 
 This is intended to be a lean and easily modifiable ImageNet training script that reproduces ImageNet
 training results with some of the latest networks and training techniques. It favours canonical PyTorch
