@@ -3,9 +3,12 @@ import threading
 import time
 import zmq
 
+import torch.nn.functional as F
+
 from collections import deque
 from dataclasses import dataclass
 from torch import Tensor, cuda, cat
+from torch.nn.utils.rnn import pad_sequence
 from tornado import ioloop
 from typing import Any, Iterator, Optional
 from zmq.eventloop import zmqstream
@@ -146,15 +149,25 @@ def collate(batches: list) -> tuple:  # TODO: also dict
     """Collate multiple tensors"""
     if isinstance(batches[0], dict):
         new_batch = {}
+        max_length = -1
         for key in batches[0].keys():
-            # for b in batches:
-            #     print(b[key].shape)
-            # print(key, "done\n\n\n")
-            # new_batch[key] = cat([batch[key][0] for batch in batches])
-            # new_batch[key] = cat([batch[key] for batch in batches])
-            new_batch[key] = cat(
-                [batches[0][key] for batch in batches]
-            )  # TODO: replace, this is to temp check with padded length
+            new_batch[key] = pad_sequence(
+                [line for batch in batches for line in batch[key]],
+                batch_first=True,
+                padding_value=0,
+            )
+
+            if (i:=new_batch[key].shape[-1]) > max_length:
+                max_length = i
+        
+        for key in batches[0].keys():
+            if (new_length:=max_length - new_batch[key].shape[-1]) > 0:
+                if key == "labels":
+                    new_batch[key] = F.pad(new_batch[key], (0, new_length), value=-100)
+                else:
+                    new_batch[key] = F.pad(new_batch[key], (0, new_length), value=0)
+        
+
         return new_batch
     return tuple((cat([batch[i] for batch in batches]) for i in range(len(batches[0]))))
 
@@ -181,12 +194,17 @@ class TensorPool:
         Returns:
             tuple: The destination tuple with updated tensor values
         """
-        destination = source  # TODO: fix
-        return destination
+        # destination = source  # TODO: fix
+        # return destination
 
-        for dest, src in zip(destination, source):
-            if isinstance(src, Tensor):
-                dest.copy_(src)
+        if isinstance(source, dict):
+            for key in source.keys():
+                if isinstance(source[key], Tensor):
+                    destination[key].copy_(source[key])
+        else:
+            for dest, src in zip(destination, source):
+                if isinstance(src, Tensor):
+                    dest.copy_(src)
         return destination
 
     def assign(self, data: tuple) -> None:
@@ -231,6 +249,7 @@ class TensorProducer:
         pack_fn: callable = pack,
         consumer_max_buffer_size: int = 10,
         producer_batch_size: int = 8,  # TODO: divide
+        max_tensor_length: int = 150,
     ) -> None:
         """Initialize producer with configuration.
 
@@ -293,6 +312,7 @@ class TensorProducer:
         # Dataset logic
         self.dataset_is_reset = True
         self.epoch = 0
+        self.max_tensor_length = max_tensor_length
 
         # Rubberbanding
         self.rb_buffer = list()
@@ -448,13 +468,19 @@ class TensorProducer:
 
             if batch_length < self.producer_batch_size:
                 # add CPU tensors to rubberband buffer
-                self.rb_buffer.append((self.index, n := next(self.data_loader_iter)))
-                # print("\n\n\nNEXT!!!", n["tokens"].shape, n["labels"].shape)
+                n = next(self.data_loader_iter)
+                if isinstance(n, dict):
+                    for key in n.keys():
+                        if isinstance(n[key], Tensor):
+                            n[key] = F.pad(
+                                n[key], (0, self.max_tensor_length - n[key].shape[-1]), value=0
+                            )
+                self.rb_buffer.append((self.index, n))
 
                 # if loader batch size not yet determined, set it
                 if self.loader_batch_size == 0:
-                    # self.loader_batch_size = len(self.rb_buffer[-1][1][0])
-                    self.loader_batch_size = 4  # TODO: fix lol
+                    self.loader_batch_size = len(self.rb_buffer[-1][1][0])
+
                     for consumer in self.consumers:
                         self.consumers[consumer].loader_batch_size = (
                             self.loader_batch_size
@@ -543,15 +569,6 @@ class TensorProducer:
                         current_batch_index=bmax * self.loader_batch_size // bs + i,
                     )
                 )
-                # print(
-                #     "\n\n\nNEXT MESSAGE SENT!!!",
-                #     data["tokens"].shape,
-                #     data["labels"].shape,
-                #     slice(data, offset, offset + bs)["tokens"].shape,
-                #     slice(data, offset, offset + bs)["labels"].shape,
-                #     n["tokens"]._tensor.shape,
-                #     n["labels"]._tensor.shape,
-                # )
 
             payload[consumer[2:-1]] = messages
 
@@ -561,7 +578,6 @@ class TensorProducer:
                 f"buffer size: {len(self.rb_buffer)}"
             )
 
-        # print("SENDING!!!!!\n\n\n", payload)
         self.socket.send_pyobj(payload)
         return payload
 
