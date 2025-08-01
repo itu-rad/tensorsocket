@@ -1,5 +1,9 @@
+<img src="tensorsocket_logo_medium.png" align="left" width="200px"/>
+
 # tensorsocket
+
 Share PyTorch tensors over ZMQ sockets
+<br clear="left"/>
 
 ## Installation
 
