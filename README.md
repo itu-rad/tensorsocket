@@ -1,9 +1,14 @@
-<img src="tensorsocket_logo_medium.png" align="left" width="200px"/>
+<div align="center">
 
-# tensorsocket
+# TensorSocket
+
+
+<img src="tensorsocket_logo_medium.png" align="center" width="200px"/>
 
 Share PyTorch tensors over ZMQ sockets
+
 <br clear="left"/>
+</div>
 
 
 ## Installation
