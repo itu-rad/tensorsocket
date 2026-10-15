@@ -7,6 +7,8 @@
 
 Share PyTorch tensors over ZMQ sockets
 
+[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.23404631.svg)](https://doi.org/10.5281/zenodo.23404631)
+
 <br clear="left"/>
 </div>
 
@@ -67,3 +69,11 @@ for batch_idx, (input, target) in enumerate(data_loader):
 ```
 
 There is a range of arguments that can be supplied to the `TensorProducer` and `TensorConsumer`, altering their behaviour to your specific needs. Examples include more/less aggressive buffering, flexible batch sizing, and larger rubberbanding buffers.
+
+## Citation
+
+TensorSocket is described in
+
+> Ties Robroek, Neil Kim Nielsen, Pınar Tözün. **TensorSocket: Shared Data Loading for Deep Learning Training.** SIGMOD 2026. [doi:10.1145/3749185](https://doi.org/10.1145/3749185)
+
+The software is archived on Zenodo: [doi:10.5281/zenodo.23404631](https://doi.org/10.5281/zenodo.23404631) (all versions).
