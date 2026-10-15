@@ -1,4 +1,7 @@
+import ctypes
 import logging
+import os
+import sys
 import threading
 import time
 import zmq
@@ -16,6 +19,23 @@ from .payload import TensorPayload
 logger = logging.getLogger("tensorsocket")
 logger.setLevel(logging.WARNING)
 LOCALHOST = "tcp://*"
+
+# glibc mallopt() parameter for the mmap threshold.
+_M_MMAP_THRESHOLD = -3
+
+
+def _bound_heap_growth(threshold: int = 4 * 1024 * 1024) -> None:
+    # The producer allocates and frees batch-sized buffers at the loader's rate.
+    # Once glibc's dynamic mmap threshold has grown past their size (up to 32 MB),
+    # they come from heap arenas that never return memory to the OS, and RSS grows
+    # with the loader's output until the process is killed (seen with small loader
+    # batches, e.g. flexible batch sizing). A fixed threshold keeps them mmap-backed.
+    if not sys.platform.startswith("linux") or "MALLOC_MMAP_THRESHOLD_" in os.environ:
+        return
+    try:
+        ctypes.CDLL("libc.so.6").mallopt(_M_MMAP_THRESHOLD, threshold)
+    except (OSError, AttributeError):
+        pass
 
 
 @dataclass
@@ -219,6 +239,8 @@ class TensorProducer:
             pack_fn: Function to prepare tensors for transmission
             consumer_max_buffer_size: Max queued batches per consumer
         """
+        _bound_heap_growth()
+
         self.port = port
         self.ack_port = ack_port
         self.heart_ports = heart_ports
@@ -272,7 +294,9 @@ class TensorProducer:
 
         # Rubberbanding
         self.rb_buffer = list()
-        self.rb_max_len = rubber_band_pct * self.data_loader_len
+        # The rubber-band buffer also stages the loader batches that are collated
+        # into one producer batch, so it must hold at least that many.
+        self.rb_max_len = max(rubber_band_pct * self.data_loader_len, producer_batch_size)
         self.rb_running = False
 
         self.active_payloads = []

@@ -164,7 +164,7 @@ class TensorConsumer:
 
     def __len__(self) -> int:
         """Get total number of batches in dataset."""
-        return self.data_loader_len * self.batch_size // self.loader_batch_size
+        return self.data_loader_len * self.loader_batch_size // self.batch_size
 
     def __next__(self) -> Tuple[int, Any]:
         """Get next batch from buffer.
@@ -179,11 +179,10 @@ class TensorConsumer:
             payload = self.buffer.get()  # This will block if buffer is empty
 
             if "stop_iteration" in payload:
+                received = self.batch_count > 0
                 self.batch_count = 0
                 self.batch_max = -1
-                if (
-                    self.batch_count > 0
-                ):  # Increase epoch if we have received at least one batch
+                if received:  # Increase epoch if we have received at least one batch
                     self.epoch += 1
                     raise StopIteration
                 else:
